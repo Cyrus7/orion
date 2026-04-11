@@ -702,6 +702,18 @@ def main():
         print("No playlist URL could be determined.")
         sys.exit(1)
 
+    # Warn if this date was already scrobbled
+    done = state.get("done_dates", [])
+    if str(show_date) in done:
+        print(f"WARNING: {show_date} has already been scrobbled.")
+        try:
+            answer = input("Re-upload anyway? [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if answer != "y":
+            print("Aborted.")
+            return
+
     print(f"Fetching playlist {show_date} – {url}")
 
     raw = fetch_playlist(url, debug=args.debug)
