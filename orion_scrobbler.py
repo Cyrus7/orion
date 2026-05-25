@@ -52,6 +52,8 @@ SEP_RE = re.compile(rf"{WSP_CHARS}+(?:{DASH_CHARS}|:){WSP_CHARS}+")
 
 DATE_DOT_RE = re.compile(r"(\d{2})\.(\d{2})\.(\d{4})")  # 14.11.2025
 DATE_DASH_RE = re.compile(r"(\d{2})-(\d{2})-(\d{4})")   # 14-11-2025
+DATE_FMT_FI = "%d.%m.%Y"
+DATE_FMT_ISO = "%Y-%m-%d"
 
 # Leading list indices
 INDEX_RE = re.compile(r"^\s*(?:#?\d{1,3})[.\):]?\s+")
@@ -126,7 +128,8 @@ def load_state():
             st = json.load(fh)
     else:
         st = {}
-    st.setdefault("done_dates", [])  # list of "YYYY-MM-DD"
+    st.setdefault("done_dates", [])
+    st["done_dates"] = normalize_done_dates(st.get("done_dates", []))
     return st
 
 def save_state(state):
@@ -138,6 +141,35 @@ def save_state(state):
 def md5(pw: str) -> str:
     import hashlib
     return hashlib.md5(pw.encode("utf-8")).hexdigest()
+
+
+def format_fi_date(d: date) -> str:
+    return d.strftime(DATE_FMT_FI)
+
+
+def parse_date_any(s: str):
+    s = (s or "").strip()
+    for fmt in (DATE_FMT_FI, DATE_FMT_ISO):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def normalize_done_dates(values):
+    out = []
+    seen = set()
+    for raw in values or []:
+        d = parse_date_any(str(raw))
+        if not d:
+            continue
+        k = format_fi_date(d)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(k)
+    return out
 
 def _normalize_line(s: str) -> str:
     s = unicodedata.normalize("NFKC", s or "")
@@ -374,14 +406,14 @@ def choose_post(target_date=None, state=None, ignore_state=False, debug=False):
         for d, url in posts:
             if d == target_date:
                 return d, url
-        raise RuntimeError(f"No playlist post found for {target_date}. Try: ./orion_scrobbler.py --list")
+        raise RuntimeError(f"No playlist post found for {format_fi_date(target_date)}. Try: ./orion_scrobbler.py --list")
 
     if ignore_state:
         return posts[0]
 
     done = set(state.get("done_dates", [])) if state else set()
     for d, url in posts:
-        if str(d) not in done:
+        if format_fi_date(d) not in done:
             return d, url
 
     # Everything already done; return newest
@@ -685,7 +717,7 @@ def main():
     if args.list:
         posts = collect_posts(debug=args.debug)
         for d, u in posts:
-            print(d, u)
+            print(format_fi_date(d), u)
         return
 
     target_date = None
@@ -704,8 +736,9 @@ def main():
 
     # Warn if this date was already scrobbled
     done = state.get("done_dates", [])
-    if str(show_date) in done:
-        print(f"WARNING: {show_date} has already been scrobbled.")
+    show_date_fi = format_fi_date(show_date)
+    if show_date_fi in done:
+        print(f"WARNING: {show_date_fi} has already been scrobbled.")
         try:
             answer = input("Re-upload anyway? [y/N] ").strip().lower()
         except (EOFError, KeyboardInterrupt):
@@ -714,7 +747,7 @@ def main():
             print("Aborted.")
             return
 
-    print(f"Fetching playlist {show_date} – {url}")
+    print(f"Fetching playlist {show_date_fi} – {url}")
 
     raw = fetch_playlist(url, debug=args.debug)
     if not raw:
@@ -798,8 +831,8 @@ def main():
 
     # Save done date to prevent ping-pong
     done = state.get("done_dates", [])
-    if str(show_date) not in done:
-        done.append(str(show_date))
+    if show_date_fi not in done:
+        done.append(show_date_fi)
         if len(done) > 80:
             done = done[-80:]
     state["done_dates"] = done

@@ -88,7 +88,7 @@ export LASTFM_SESSION_KEY=$(cat ~/.session_key)
 
 ## State file
 
-Processed dates are stored in `~/.orion_scrobbler_state.json` (up to 80 entries). Delete or edit this file to re-scrobble a date.
+Processed dates are stored in `~/.orion_scrobbler_state.json` as `DD.MM.YYYY` (up to 80 entries). Delete or edit this file to re-scrobble a date.
 
 ## Authentication alternatives
 
