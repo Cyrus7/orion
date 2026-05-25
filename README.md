@@ -107,4 +107,3 @@ export LASTFM_PASSWORD=your_password
 | `--poll` | Auto-poll until you approve in the browser |
 | `--token TOKEN` | Provide the token manually from the URL bar |
 | `--save PATH` | Save to a custom path (default: `~/.session_key`) |
-| `--no-password` | Fail if pylast requires a password hash |

@@ -12,24 +12,30 @@ Usage:
 Environment:
   LASTFM_API_KEY        (required)
   LASTFM_API_SECRET     (required)
-  LASTFM_PASSWORD       (optional; used only on very old pylast that
-                         requires a password hash for get_session_key)
 Options:
   --open                open the auth URL in your browser
   --poll                use pylast.SessionKeyGenerator.get_web_auth_session_key(url)
                         if available (auto-polls until approved)
   --token TOKEN         paste the token from the address bar (after you clicked Allow)
   --save PATH           where to store the session key (default: ~/.session_key)
-  --no-password         do NOT prompt for password; fail if old pylast requires it
 """
 
-import os, sys, time, textwrap, getpass, argparse
+import os, sys, time, textwrap, argparse, re
 try:
     import pylast
 except ImportError:
     sys.exit("pylast is not installed. Install python3-pylast or pip install pylast")
 
 DEF_SAVE = os.path.join(os.path.expanduser("~"), ".session_key")
+
+
+def normalize_token(value: str) -> str:
+    """Accept either raw token or a full URL containing ?token=..."""
+    value = (value or "").strip()
+    m = re.search(r"[?&]token=([a-fA-F0-9]+)", value)
+    if m:
+        return m.group(1)
+    return value
 
 def env(key):
     v = os.getenv(key)
@@ -43,7 +49,6 @@ def main():
     ap.add_argument("--poll", action="store_true", help="Auto-poll for approval if supported")
     ap.add_argument("--token", help="Paste the ?token=... value from the address bar")
     ap.add_argument("--save", default=DEF_SAVE, help=f"File to save the session key (default: {DEF_SAVE})")
-    ap.add_argument("--no-password", action="store_true", help="Do not prompt for password (older pylast may fail)")
     args = ap.parse_args()
 
     API_KEY    = env("LASTFM_API_KEY")
@@ -80,18 +85,32 @@ def main():
         token = args.token
         if not token:
             token = input("Paste the token (the part after token=): ").strip()
+        token = normalize_token(token)
 
-        # Try modern signature first (token only) then fall back to old one (token + password hash)
-        try:
-            session_key = skg.get_session_key(token)  # newer pylast
-        except TypeError:
-            # Old pylast (e.g. 5.2) requires password hash
-            if args.no_password:
-                sys.exit("This pylast needs a password hash; re-run without --no-password or set LASTFM_PASSWORD.")
-            pw = os.getenv("LASTFM_PASSWORD")
-            if pw is None:
-                pw = getpass.getpass("Your Last.fm password (only to create the hash, not stored): ")
-            session_key = skg.get_session_key(token, pylast.md5(pw))
+        token_auth_url = f"{network.homepage}/api/auth/?api_key={API_KEY}&token={token}"
+
+        # Preferred token exchange. In pylast 5.2, get_session_key() is NOT token-based.
+        if hasattr(skg, "get_web_auth_session_key"):
+            try:
+                # Use token-specific URL so pylast cannot override token from in-memory URL mapping.
+                session_key = skg.get_web_auth_session_key(token_auth_url, token)
+            except pylast.WSError as e:
+                msg = getattr(e, "details", str(e))
+                if "Unauthorized Token" in msg or "has not been authorized" in msg:
+                    sys.exit(
+                        "This token is not authorized yet. Open this URL, click Allow, and re-run with the same token:\n"
+                        f"  {token_auth_url}"
+                    )
+                raise
+        else:
+            # Fallback for variants where token-based get_session_key(token) exists.
+            try:
+                session_key = skg.get_session_key(token)
+            except TypeError:
+                sys.exit(
+                    "This pylast version cannot exchange a web token with get_session_key(). "
+                    "Install a pylast version that supports get_web_auth_session_key()."
+                )
 
     # Save + print
     with open(args.save, "w") as f:
