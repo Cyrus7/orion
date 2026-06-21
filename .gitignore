@@ -1,0 +1,34 @@
+# Claude Code / claude-flow (project-local, not for VCS)
+CLAUDE.md
+.claude-flow/
+agentdb.rvf
+agentdb.rvf.lock
+
+# Environment / secrets
+.env
+.env.*
+*.session_key
+~/.session_key
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# State file (user-local, not shareable)
+*.orion_scrobbler_state.json
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
