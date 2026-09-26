@@ -646,14 +646,14 @@ def parse_tracks_from_raw(raw_lines, debug=False):
 
 
 # ───────────────────────── Build scrobbles ─────────────────────────
-def build_scrobbles(tracks, show_date: date):
+def build_scrobbles(tracks, show_date: date, start_hm=SHOW_START_HM, duration_h=SHOW_DURATION_H):
     """
     pylast 5.2: scrobble_many expects list[dict] with artist/title/timestamp.
     Distribute tracks evenly within show window; clamp so timestamps are not in the future.
     """
     start_local = datetime.combine(show_date, datetime.min.time(), TZ_HELSINKI)
-    start_local = start_local.replace(hour=SHOW_START_HM[0], minute=SHOW_START_HM[1])
-    end_local = start_local + timedelta(hours=SHOW_DURATION_H)
+    start_local = start_local.replace(hour=start_hm[0], minute=start_hm[1])
+    end_local = start_local + timedelta(hours=duration_h)
 
     start_ts = int(start_local.timestamp())
     end_ts   = int(end_local.timestamp())
@@ -698,6 +698,10 @@ def main():
     ap = argparse.ArgumentParser(description="Scrobble DJ Orion playlists to Last.fm")
     ap.add_argument("--date", metavar="DD.MM.YYYY",
                     help="Which Friday to import (strict: must exist in --list)")
+    ap.add_argument("--start", metavar="HH:MM", default="%02d:%02d" % SHOW_START_HM,
+                    help="Show start time, Helsinki (default: %(default)s)")
+    ap.add_argument("--hours", metavar="N", type=float, default=SHOW_DURATION_H,
+                    help="Show length in hours (default: %(default)s)")
     ap.add_argument("--dry-run", action="store_true",
                     help="Parse & print but don’t send to Last.fm")
     ap.add_argument("--debug", action="store_true",
@@ -711,6 +715,13 @@ def main():
     ap.add_argument("--dump-candidates", action="store_true",
                     help="Print only track-like candidate raw lines and exit")
     args = ap.parse_args()
+    try:
+        start_hm = tuple(map(int, args.start.split(":")))
+        assert len(start_hm) == 2 and 0 <= start_hm[0] < 24 and 0 <= start_hm[1] < 60
+    except (ValueError, AssertionError):
+        ap.error("--start must be HH:MM")
+    if args.hours <= 0:
+        ap.error("--hours must be positive")
 
     state = load_state()
 
@@ -817,7 +828,7 @@ def main():
         print("Authentication failed:", e)
         sys.exit(1)
 
-    scrobs = build_scrobbles(tracks, show_date)
+    scrobs = build_scrobbles(tracks, show_date, start_hm, args.hours)
     batches = list(chunk(scrobs, MAX_BATCH))
 
     print(f"Uploading to Last.fm in {len(batches)} batch(es)…")

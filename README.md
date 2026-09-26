@@ -7,7 +7,7 @@ Scrapes DJ Orion's weekly Friday playlist from [djorion.fi](http://www.djorion.f
 - Parses "Artist – Title" lines (handles `-`, `–`, `—`, `:` separators with spaces)
 - Filters promo/social/navigation lines
 - Handles multi-line "K – System" style artist name splits
-- Distributes scrobble timestamps evenly across a 20:00–22:00 Helsinki window
+- Distributes scrobble timestamps evenly across a Helsinki-time window (default 20:00–22:00; override with `--start HH:MM --hours N`)
 - Tracks processed dates to avoid duplicate scrobbles
 - `--dry-run` and `--debug` modes for safe testing
 
