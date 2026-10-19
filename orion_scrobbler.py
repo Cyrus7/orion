@@ -64,8 +64,20 @@ CLEAN_RE = re.compile(
         \s*\(toive:[^)]+\)\s*$     # (toive: Mikko)
       | \s*\[[^\]]+\]\s*$          # [live], [edit], etc.
       | \s*\#[\w\-]+\s*$           # trailing #Hashtag
+      | \s*/{2,}\s*$               # trailing "//" (Areena link marker)
     """
 )
+
+# Headings that mark the start of trailing sidebar/history content we never
+# want to parse as tracks (e.g. "Tällä hetkellä luetuimmat" reading list).
+TRAILING_CUTOFF_PHRASES = (
+    "tällä viikolla aiempina vuosina",
+    "tällä hetkellä luetuimmat",
+)
+
+def is_trailing_cutoff(s: str) -> bool:
+    s = _normalize_line(s).lower()
+    return any(phrase in s for phrase in TRAILING_CUTOFF_PHRASES)
 
 QUOTE_CHARS = " '\"“”‘’‚‛«»‹›„‟"
 
@@ -543,12 +555,27 @@ def parse_track(line: str):
     if not SEP_RE.search(line):
         return None
 
-    parts = SEP_RE.split(line, maxsplit=1)
-    if len(parts) != 2:
+    # Pick the first separator that isn't nested inside parentheses, so a
+    # dash inside e.g. "Glow (Ft. Nu – La)" doesn't get mistaken for the
+    # artist/title boundary.
+    depth_at = []
+    depth = 0
+    for ch in line:
+        depth_at.append(depth)
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+
+    split_match = next(
+        (m for m in SEP_RE.finditer(line) if depth_at[m.start()] == 0),
+        None,
+    )
+    if split_match is None:
         return None
 
-    artist = strip_quotes(parts[0].strip())
-    title  = strip_quotes(parts[1].strip())
+    artist = strip_quotes(line[:split_match.start()].strip())
+    title  = strip_quotes(line[split_match.end():].strip())
 
     if not artist or not title:
         return None
@@ -570,6 +597,13 @@ def parse_track(line: str):
 def parse_tracks_from_raw(raw_lines, debug=False):
     raw = [_normalize_line(x) for x in raw_lines]
     raw = [x for x in raw if x]
+
+    # Drop trailing sidebar/history sections entirely so their numbered
+    # "N. Headline – subhead" lines can't be mistaken for tracks.
+    for i, line in enumerate(raw):
+        if is_trailing_cutoff(line):
+            raw = raw[:i]
+            break
 
     raw = merge_k_system(raw)
 
@@ -618,11 +652,6 @@ def parse_tracks_from_raw(raw_lines, debug=False):
             artist = prev_c
             title  = nxt_c
 
-        # Swap if feat. tag landed in artist slot
-        if re.search(r"\b(feat|ft)\.?\b", artist, re.I) and not re.search(r"\b(feat|ft)\.?\b", title, re.I):
-            artist, title = title, artist
-
-
         artist, title = tidy_artist_title(artist, title)
 
         if not artist or not title:
@@ -630,6 +659,19 @@ def parse_tracks_from_raw(raw_lines, debug=False):
 
         tracks.append((artist, title))
 
+    # ---- also parse lines that already spell out "Artist – Title" on one
+    # line (e.g. mashup/XmiX credits that aren't split across <br>s) ----
+    for line in raw:
+        if DASH_ONLY_RE.match(line):
+            continue  # handled by the stitching pass above
+        if not SEP_RE.search(line):
+            continue
+        parsed = parse_track(line)
+        if not parsed:
+            continue
+        artist, title = tidy_artist_title(*parsed)
+        if artist and title:
+            tracks.append((artist, title))
 
     # Deduplicate
     seen, dedup = set(), []
